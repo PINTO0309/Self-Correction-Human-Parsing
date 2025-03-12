@@ -91,7 +91,8 @@ class PSPModule(nn.Module):
         Zhao, Hengshuang, et al. *"Pyramid scene parsing network."*
     """
 
-    def __init__(self, features, out_features=512, sizes=(1, 2, 3, 6)):
+    # def __init__(self, features, out_features=512, sizes=(1, 2, 3, 6)):
+    def __init__(self, features, out_features=512, sizes=(30, 15, 10, 5)):
         super(PSPModule, self).__init__()
 
         self.stages = []
@@ -103,32 +104,37 @@ class PSPModule(nn.Module):
         )
 
     def _make_stage(self, features, out_features, size):
-        prior = nn.AdaptiveAvgPool2d(output_size=(size, size))
+        # prior = nn.AdaptiveAvgPool2d(output_size=(size, size))
+        prior = nn.AvgPool2d(kernel_size=(size, size))
         conv = nn.Conv2d(features, out_features, kernel_size=1, bias=False)
         bn = InPlaceABNSync(out_features)
         return nn.Sequential(prior, conv, bn)
 
     def forward(self, feats):
         h, w = feats.size(2), feats.size(3)
-        priors = [F.interpolate(input=stage(feats), size=(h, w), mode='bilinear', align_corners=True) for stage in
-                  self.stages] + [feats]
+        priors = []
+        for idx, stage in enumerate(self.stages):
+            staged = stage(feats)
+            interp = F.interpolate(input=staged, size=(h, w), mode='bilinear', align_corners=True)
+            priors.append(interp)
+        priors.append(feats)
         bottle = self.bottleneck(torch.cat(priors, 1))
         return bottle
 
 
 class ASPPModule(nn.Module):
     """
-    Reference: 
+    Reference:
         Chen, Liang-Chieh, et al. *"Rethinking Atrous Convolution for Semantic Image Segmentation."*
     """
 
     def __init__(self, features, inner_features=256, out_features=512, dilations=(12, 24, 36)):
         super(ASPPModule, self).__init__()
 
-        self.conv1 = nn.Sequential(nn.AdaptiveAvgPool2d((1, 1)),
-                                   nn.Conv2d(features, inner_features, kernel_size=1, padding=0, dilation=1,
-                                             bias=False),
-                                   InPlaceABNSync(inner_features))
+        self.conv1 = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Conv2d(features, inner_features, kernel_size=1, padding=0, dilation=1, bias=False),
+            InPlaceABNSync(inner_features))
         self.conv2 = nn.Sequential(
             nn.Conv2d(features, inner_features, kernel_size=1, padding=0, dilation=1, bias=False),
             InPlaceABNSync(inner_features))
@@ -150,9 +156,7 @@ class ASPPModule(nn.Module):
 
     def forward(self, x):
         _, _, h, w = x.size()
-
         feat1 = F.interpolate(self.conv1(x), size=(h, w), mode='bilinear', align_corners=True)
-
         feat2 = self.conv2(x)
         feat3 = self.conv3(x)
         feat4 = self.conv4(x)
@@ -311,7 +315,6 @@ class ResNet(nn.Module):
         x = torch.cat([parsing_fea, edge_fea], dim=1)
         fusion_result = self.fushion(x)
         return [[parsing_result, fusion_result], [edge_result]]
-
 
 def initialize_pretrained_model(model, settings, pretrained='./models/resnet101-imagenet.pth'):
     model.input_space = settings['input_space']

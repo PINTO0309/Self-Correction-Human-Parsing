@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "debug",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                // "--dataset", "lip",
+                // "--model-restore", "./exp-schp-201908261155-lip.pth",
+                "--dataset", "atr",
+                "--model-restore", "./exp-schp-201908301523-atr.pth",
+                // "--dataset", "pascal",
+                // "--model-restore", "./exp-schp-201908270938-pascal-person-part.pth",
+                "--input-dir", "inputs",
+                "--output-dir", "outputs",
+                "--onnx-export-only"
+            ]
+        }
+    ]
+}

@@ -3,3 +3,8 @@
 data/
 log/
 pretrain_model/
+inputs/
+outputs*/
+*.pth
+*.onnx
+*.engine
