@@ -12,6 +12,8 @@
 """
 
 import os
+import sys
+import copy
 import torch
 import argparse
 import numpy as np
@@ -60,6 +62,7 @@ def get_arguments():
     parser.add_argument("--input-dir", type=str, default='', help="path of input image folder.")
     parser.add_argument("--output-dir", type=str, default='', help="path of output image folder.")
     parser.add_argument("--logits", action='store_true', default=False, help="whether to save the logits.")
+    parser.add_argument("--onnx-export-only", action='store_true')
 
     return parser.parse_args()
 
@@ -87,6 +90,17 @@ def get_palette(num_cls):
             lab >>= 3
     return palette
 
+class SegmentModel(torch.nn.Module):
+    def __init__(self, model: torch.nn.Module, input_size=[512, 512]):
+        super(SegmentModel, self).__init__()
+        self.model = model
+        self.input_size = input_size
+
+    def forward(self, x: torch.Tensor):
+        outputs = self.model(x)
+        output = torch.nn.Upsample(size=self.input_size, mode='bilinear', align_corners=True)(outputs[0][-1])
+        output = torch.argmax(output, dim=1, keepdim=True)
+        return output
 
 def main():
     args = get_arguments()
@@ -101,17 +115,97 @@ def main():
     label = dataset_settings[args.dataset]['label']
     print("Evaluating total class number {} with {}".format(num_classes, label))
 
-    model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)
+    if not args.onnx_export_only:
+        model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)
+        state_dict = torch.load(args.model_restore)['state_dict']
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k[7:]  # remove `module.`
+            new_state_dict[name] = v
+        model.load_state_dict(new_state_dict)
+        model.cuda()
 
-    state_dict = torch.load(args.model_restore)['state_dict']
-    from collections import OrderedDict
-    new_state_dict = OrderedDict()
-    for k, v in state_dict.items():
-        name = k[7:]  # remove `module.`
-        new_state_dict[name] = v
-    model.load_state_dict(new_state_dict)
-    model.cuda()
-    model.eval()
+    if args.onnx_export_only:
+        import onnx
+        from onnxsim import simplify
+        RESOLUTION = [
+            # [192,320],
+            # [192,416],
+            # [192,640],
+            # [192,800],
+            # [256,320],
+            # [256,416],
+            # [256,448],
+            # [256,640],
+            # [256,800],
+            # [256,960],
+            # [288,480],
+            # [288,640],
+            # [288,800],
+            # [288,960],
+            # [288,1280],
+            # [320,320],
+            # [384,480],
+            # [384,640],
+            # [384,800],
+            # [384,960],
+            # [384,1280],
+            # [416,416],
+
+            [480,480],
+            [480,640],
+            [480,800],
+            [480,960],
+            [480,1280],
+            [512,512],
+            [512,640],
+            [512,896],
+            [544,800],
+            [544,960],
+            [544,1280],
+            [640,640],
+            [736,1280],
+        ]
+        for H, W in RESOLUTION:
+            model = networks.init_model('resnet101', num_classes=num_classes, pretrained=None)
+            state_dict = torch.load(args.model_restore)['state_dict']
+            from collections import OrderedDict
+            new_state_dict = OrderedDict()
+            for k, v in state_dict.items():
+                name = k[7:]  # remove `module.`
+                new_state_dict[name] = v
+            model.load_state_dict(new_state_dict)
+            model = SegmentModel(
+                model=model,
+                input_size=[H, W],
+            )
+            model.cpu()
+            model.eval()
+
+            onnx_file = f"bodyparse_{args.dataset}_{num_classes}_1x3x{H}x{W}.onnx"
+            x = torch.randn(1, 3, H, W).cpu()
+            torch.onnx.export(
+                model,
+                args=(x),
+                f=onnx_file,
+                opset_version=11,
+                input_names=['input_bgr'],
+                output_names=['segment'],
+            )
+            model_onnx1 = onnx.load(onnx_file)
+            model_onnx1 = onnx.shape_inference.infer_shapes(model_onnx1)
+            onnx.save(model_onnx1, onnx_file)
+            model_onnx2 = onnx.load(onnx_file)
+            model_simp, check = simplify(model_onnx2)
+            onnx.save(model_simp, onnx_file)
+            model_onnx2 = onnx.load(onnx_file)
+            model_simp, check = simplify(model_onnx2)
+            onnx.save(model_simp, onnx_file)
+            model_onnx2 = onnx.load(onnx_file)
+            model_simp, check = simplify(model_onnx2)
+            onnx.save(model_simp, onnx_file)
+        sys.exit(0)
 
     transform = transforms.Compose([
         transforms.ToTensor(),
