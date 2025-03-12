@@ -1,3 +1,10 @@
+# The `onnx` branch of this fork is a model structure optimized for processing with ONNX.
+
+|Image|Image|
+|:-:|:-:|
+|![000000000077](https://github.com/user-attachments/assets/87da5e1e-f1de-40b1-af63-3f14f2d617bc)|![000000000110](https://github.com/user-attachments/assets/64dd1554-f218-44f6-a327-d2117799e09a)|
+|![000000000113](https://github.com/user-attachments/assets/1c5c5361-a351-4de4-9ab6-ad2b0003600a)|![000000000241](https://github.com/user-attachments/assets/a8c36968-4e02-4ea6-838b-0a208a4248e5)|
+
 # Self Correction for Human Parsing
 
 ![Python 3.6](https://img.shields.io/badge/python-3.6-green.svg)
